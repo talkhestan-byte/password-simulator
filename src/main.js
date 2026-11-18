@@ -1,8 +1,8 @@
 const MAX_LENGTH = 6;
-const NUM_WORKERS = Math.min(navigator.hardwareConcurrency || 2, 6);
+const NUM_WORKERS = Math.min(navigator.hardwareConcurrency || 2, 8);
 const $ = (id) => document.getElementById(id);
 
-let workers = [];
+let allWorkers = [];
 let running = false;
 let totalAttempts = 0;
 let globalStartTime = 0;
@@ -21,10 +21,16 @@ function clearLog() {
   $("log").textContent = "";
 }
 
-// تابع هش برای مقایسه اولیه
+function stopAll() {
+  allWorkers.forEach((w) => w.terminate());
+  allWorkers = [];
+  running = false;
+  $("startBtn").disabled = false;
+  $("stopBtn").disabled = true;
+}
+
+// تابع هش همگام
 function sha256Sync(ascii) {
-    // این تابع فقط برای گرفتن هش پسورد اصلی در ابتدای کار است
-    // و همان کد ورکر است
     function rightRotate(value, amount) { return (value>>>amount) | (value<<(32-amount)); }
     var mathPow = Math.pow; var maxWord = mathPow(2, 32);
     var lengthProperty = 'length'; var i, j; var result = ''; var words = [];
@@ -65,33 +71,27 @@ function sha256Sync(ascii) {
     return result;
 }
 
-function stopAll() {
-  workers.forEach((w) => w.terminate());
-  workers = [];
-  running = false;
-  $("startBtn").disabled = false;
-  $("stopBtn").disabled = true;
-}
-
+// این تابع مسئول تست یک طول خاص است
 function crackLength(length, charset, targetHash) {
   return new Promise((resolve) => {
     const total = Math.pow(charset.length, length);
-    const chunk = Math.ceil(total / NUM_WORKERS);
+    const chunkSize = Math.ceil(total / NUM_WORKERS);
+    
+    // اگر تعداد کل ترکیب ها کمتر از تعداد ورکرها بود
+    const actualWorkers = Math.min(NUM_WORKERS, total);
 
-    let finished = 0;
-    let found = null;
-    let currentWorkers = []; // لیست ورکرهای این مرحله
+    let finishedCount = 0;
+    let found = false;
 
     log(`🔍 Length ${length}: ${total.toLocaleString()} combos`);
 
-    for (let w = 0; w < NUM_WORKERS; w++) {
-      const startIdx = w * chunk;
-      const endIdx = Math.min(startIdx + chunk, total);
+    for (let w = 0; w < actualWorkers; w++) {
+      const startIdx = w * chunkSize;
+      const endIdx = Math.min(startIdx + chunkSize, total);
       if (startIdx >= endIdx) continue;
 
       const worker = new Worker("src/cracker.worker.js");
-      currentWorkers.push(worker); // اضافه کردن به لیست محلی
-      workers.push(worker); // اضافه کردن به لیست کلی
+      allWorkers.push(worker);
 
       worker.onmessage = (e) => {
         const data = e.data;
@@ -104,16 +104,17 @@ function crackLength(length, charset, targetHash) {
         }
 
         if (data.found && !found) {
-          found = data.found;
-          // فقط ورکرهای همین مرحله را متوقف کن
-          currentWorkers.forEach(worker => worker.terminate());
-          resolve(found);
+          found = true;
+          // متوقف کردن بقیه ورکرها
+          allWorkers.forEach(w => w.terminate());
+          resolve(data.found);
+          return;
         }
 
-        if (data.done) {
-          finished++;
-          // فقط زمانی متوقف کن که تمام ورکرهای این مرحله تمام شده باشند
-          if (finished === currentWorkers.length && !found) {
+        if (data.done && !found) {
+          finishedCount++;
+          // اگر همه ورکرهای این مرحله تمام شدند و رمزی پیدا نشد
+          if (finishedCount === actualWorkers) {
             resolve(null);
           }
         }
@@ -122,7 +123,8 @@ function crackLength(length, charset, targetHash) {
       worker.postMessage({ charset, length, targetHash, startIdx, endIdx });
     }
   });
-} 
+}
+
 async function startSimulation() {
   if (running) return;
 
@@ -141,15 +143,19 @@ async function startSimulation() {
   globalStartTime = performance.now();
   $("startBtn").disabled = true;
   $("stopBtn").disabled = false;
+  
+  allWorkers = []; // ریست کردن لیست ورکرها
 
   const targetHash = sha256Sync(password);
 
   log(`[Target] ${password}`);
+  log(`[Hash] ${targetHash.substring(0, 10)}...`);
   log(`[Workers] ${NUM_WORKERS}`);
   log("─".repeat(30));
 
   let found = null;
 
+  // مرحله به مرحله از طول 1 تا طول رمز هدف جلو می‌رویم
   for (let length = 1; length <= password.length; length++) {
     found = await crackLength(length, charset, targetHash);
     if (found) break;
@@ -164,7 +170,6 @@ async function startSimulation() {
     log(`✅ CRACKED!`);
     log(`[Password] ${found}`);
     log(`[Time]     ${elapsed.toFixed(2)}s`);
-    log(`[Rate]     ${rate.toLocaleString()} tries/sec`);
     setStatus(`✅ Found: ${found}`);
   } else {
     log(`❌ NOT FOUND within ${MAX_LENGTH} chars`);
@@ -172,9 +177,7 @@ async function startSimulation() {
     setStatus(`❌ Not found`);
   }
 
-  running = false;
-  $("startBtn").disabled = false;
-  $("stopBtn").disabled = true;
+  stopAll();
 }
 
 $("startBtn").addEventListener("click", startSimulation);

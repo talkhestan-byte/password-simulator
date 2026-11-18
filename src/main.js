@@ -80,6 +80,7 @@ function crackLength(length, charset, targetHash) {
 
     let finished = 0;
     let found = null;
+    let currentWorkers = []; // لیست ورکرهای این مرحله
 
     log(`🔍 Length ${length}: ${total.toLocaleString()} combos`);
 
@@ -89,7 +90,8 @@ function crackLength(length, charset, targetHash) {
       if (startIdx >= endIdx) continue;
 
       const worker = new Worker("src/cracker.worker.js");
-      workers.push(worker);
+      currentWorkers.push(worker); // اضافه کردن به لیست محلی
+      workers.push(worker); // اضافه کردن به لیست کلی
 
       worker.onmessage = (e) => {
         const data = e.data;
@@ -103,14 +105,15 @@ function crackLength(length, charset, targetHash) {
 
         if (data.found && !found) {
           found = data.found;
-          stopAll();
+          // فقط ورکرهای همین مرحله را متوقف کن
+          currentWorkers.forEach(worker => worker.terminate());
           resolve(found);
         }
 
         if (data.done) {
           finished++;
-          if (finished === NUM_WORKERS && !found) {
-            stopAll();
+          // فقط زمانی متوقف کن که تمام ورکرهای این مرحله تمام شده باشند
+          if (finished === currentWorkers.length && !found) {
             resolve(null);
           }
         }
@@ -119,8 +122,7 @@ function crackLength(length, charset, targetHash) {
       worker.postMessage({ charset, length, targetHash, startIdx, endIdx });
     }
   });
-}
-
+} 
 async function startSimulation() {
   if (running) return;
 

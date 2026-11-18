@@ -2,8 +2,8 @@ name: Build Android APK
 
 on:
   push:
-    branches: [ main ] # یا هر شاخه‌ای که کد شما در آن است
-  workflow_dispatch: # این گزینه به شما اجازه می‌دهد دستی هم اجرا کنید
+    branches: [ main ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -15,7 +15,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: 18 # یا 20
+          node-version: 20
 
       - name: Setup Java
         uses: actions/setup-java@v4
@@ -26,16 +26,17 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      - name: Build Web App
-        run: npm run build # اگر اسکریپت بیلد ندارید، این خط را حذف کنید
+      # این مرحله دقیقا همان کاری را می کند که گفتید: ساخت پوشه www
+      - name: Create www folder and copy files
+        run: |
+          mkdir -p www
+          cp index.html www/
+          cp -r src www/
 
-      - name: Add Android Platform
-        run: npx cap add android
-
-      - name: Sync Capacitor
+      - name: Capacitor Sync
         run: npx cap sync
 
-      - name: Build APK (Debug)
+      - name: Build APK
         run: |
           cd android
           chmod +x gradlew

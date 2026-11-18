@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1.0, maximum-scale=1.0" />
+  <title>Password Simulator</title>
+  <link rel="stylesheet" href="src/style.css" />
+</head>
+<body>
+  <div class="app">
+    <header>
+      <h1>🔐 Password Simulator</h1>
+      <p class="subtitle">Educational brute-force demo (max 4 chars)</p>
+    </header>
+
+    <main>
+      <label for="password">Target password (1–4 chars):</label>
+      <input id="password" type="text" value="ab1" maxlength="4" />
+
+      <label for="charset">Character set:</label>
+      <input id="charset" type="text"
+             value="abcdefghijklmnopqrstuvwxyz0123456789@#!" />
+
+      <button id="startBtn">▶ Start Brute-Force</button>
+      <button id="stopBtn" disabled>⏹ Stop</button>
+
+      <div id="status" class="status">Idle</div>
+
+      <pre id="log"></pre>
+    </main>
+
+    <footer>
+      ⚠️ For educational purposes only. Do not use on real systems.
+    </footer>
+  </div>
+
+  <script src="src/main.js"></script>
+</body>
+</html>

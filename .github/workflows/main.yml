@@ -26,22 +26,29 @@ jobs:
       - name: Install dependencies
         run: npm install
 
-      # این مرحله دقیقا همان کاری را می کند که گفتید: ساخت پوشه www
+      # 1. ساخت پوشه www و کپی فایل ها
       - name: Create www folder and copy files
         run: |
           mkdir -p www
           cp index.html www/
           cp -r src www/
 
+      # 2. ساخت پروژه اندروید (این مرحله قبلا جا افتاده بود)
+      - name: Add Android Platform
+        run: npx cap add android
+
+      # 3. همگام سازی
       - name: Capacitor Sync
         run: npx cap sync
 
+      # 4. ساخت فایل APK
       - name: Build APK
         run: |
           cd android
           chmod +x gradlew
           ./gradlew assembleDebug
 
+      # 5. آپلود فایل
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:

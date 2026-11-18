@@ -1,13 +1,5 @@
-// ============================================
-// Password Simulator (Educational)
-// ============================================
-// منطق: حمله brute-force روی رمزهای کوتاه (1-4 کاراکتر)
-// با استفاده از Web Workers برای موازی‌سازی
-// ============================================
-
-const MAX_LENGTH = 4;
-const NUM_WORKERS = Math.min(navigator.hardwareConcurrency || 2, 4);
-
+const MAX_LENGTH = 6;
+const NUM_WORKERS = Math.min(navigator.hardwareConcurrency || 2, 6);
 const $ = (id) => document.getElementById(id);
 
 let workers = [];
@@ -29,20 +21,50 @@ function clearLog() {
   $("log").textContent = "";
 }
 
-// ============================================
-// SHA-256
-// ============================================
-async function sha256(text) {
-  const buf = new TextEncoder().encode(text);
-  const hashBuf = await crypto.subtle.digest("SHA-256", buf);
-  return Array.from(new Uint8Array(hashBuf))
-    .map((b) => b.toString(16).padStart(2, "0"))
-    .join("");
+// تابع هش برای مقایسه اولیه
+function sha256Sync(ascii) {
+    // این تابع فقط برای گرفتن هش پسورد اصلی در ابتدای کار است
+    // و همان کد ورکر است
+    function rightRotate(value, amount) { return (value>>>amount) | (value<<(32-amount)); }
+    var mathPow = Math.pow; var maxWord = mathPow(2, 32);
+    var lengthProperty = 'length'; var i, j; var result = ''; var words = [];
+    var asciiBitLength = ascii[lengthProperty] * 8;
+    var hash = sha256Sync.h = sha256Sync.h || []; var k = sha256Sync.k = sha256Sync.k || [];
+    var primeCounter = k[lengthProperty]; var isComposite = {};
+    for (var candidate = 2; primeCounter < 64; candidate++) {
+      if (!isComposite[candidate]) {
+        for (i = 0; i < 313; i += candidate) { isComposite[i] = candidate; }
+        hash[primeCounter] = (mathPow(candidate, .5) * maxWord) | 0;
+        k[primeCounter++] = (mathPow(candidate, 1/3) * maxWord) | 0;
+      }
+    }
+    ascii += '\x80'; while (ascii[lengthProperty] % 64 - 56) ascii += '\x00';
+    for (i = 0; i < ascii[lengthProperty]; i++) {
+      j = ascii.charCodeAt(i); if (j >> 8) return null;
+      words[i >> 2] |= j << ((3 - i) % 4) * 8;
+    }
+    words[words[lengthProperty]] = ((asciiBitLength / maxWord) | 0);
+    words[words[lengthProperty]] = (asciiBitLength);
+    for (j = 0; j < words[lengthProperty];) {
+      var w = words.slice(j, j += 16); var oldHash = hash; hash = hash.slice(0, 8);
+      for (i = 0; i < 64; i++) {
+        var i2 = i + j; var w15 = w[i - 15], w2 = w[i - 2]; var a = hash[0], e = hash[4];
+        var temp1 = hash[7] + (rightRotate(e, 6) ^ rightRotate(e, 11) ^ rightRotate(e, 25))
+          + ((e & hash[5]) ^ ((~e) & hash[6])) + k[i]
+          + (w[i] = (i < 16) ? w[i] : (w[i - 16] + (rightRotate(w15, 7) ^ rightRotate(w15, 18) ^ (w15 >>> 3))
+          + w[i - 7] + (rightRotate(w2, 17) ^ rightRotate(w2, 19) ^ (w2 >>> 10))) | 0);
+        var temp2 = (rightRotate(a, 2) ^ rightRotate(a, 13) ^ rightRotate(a, 22))
+          + ((a & hash[1]) ^ (a & hash[2]) ^ (hash[1] & hash[2]));
+        hash = [(temp1 + temp2) | 0].concat(hash); hash[4] = (hash[4] + temp1) | 0;
+      }
+      for (i = 0; i < 8; i++) { hash[i] = (hash[i] + oldHash[i]) | 0; }
+    }
+    for (i = 0; i < 8; i++) { for (j = 3; j + 1; j--) {
+        var b = (hash[i] >> (j * 8)) & 255; result += ((b < 16) ? 0 : '') + b.toString(16);
+    }}
+    return result;
 }
 
-// ============================================
-// توقف همه workerها
-// ============================================
 function stopAll() {
   workers.forEach((w) => w.terminate());
   workers = [];
@@ -51,9 +73,6 @@ function stopAll() {
   $("stopBtn").disabled = true;
 }
 
-// ============================================
-// اجرای brute-force برای یک طول مشخص
-// ============================================
 function crackLength(length, charset, targetHash) {
   return new Promise((resolve) => {
     const total = Math.pow(charset.length, length);
@@ -61,7 +80,6 @@ function crackLength(length, charset, targetHash) {
 
     let finished = 0;
     let found = null;
-    let lengthAttempts = 0;
 
     log(`🔍 Length ${length}: ${total.toLocaleString()} combos`);
 
@@ -77,14 +95,10 @@ function crackLength(length, charset, targetHash) {
         const data = e.data;
 
         if (data.progress) {
-          lengthAttempts += data.attempts;
           totalAttempts += data.attempts;
           const elapsed = (performance.now() - globalStartTime) / 1000;
           const rate = Math.round(totalAttempts / elapsed);
-          setStatus(
-            `Running... ${totalAttempts.toLocaleString()} attempts ` +
-            `(${rate.toLocaleString()}/s)`
-          );
+          setStatus(`Running... ${totalAttempts.toLocaleString()} attempts (${rate.toLocaleString()}/s)`);
         }
 
         if (data.found && !found) {
@@ -102,24 +116,11 @@ function crackLength(length, charset, targetHash) {
         }
       };
 
-      worker.onerror = (err) => {
-        log(`❌ Worker error: ${err.message}`);
-      };
-
-      worker.postMessage({
-        charset,
-        length,
-        targetHash,
-        startIdx,
-        endIdx,
-      });
+      worker.postMessage({ charset, length, targetHash, startIdx, endIdx });
     }
   });
 }
 
-// ============================================
-// شروع شبیه‌سازی
-// ============================================
 async function startSimulation() {
   if (running) return;
 
@@ -128,21 +129,9 @@ async function startSimulation() {
 
   clearLog();
 
-  // اعتبارسنجی
-  if (!password) {
-    log("❌ Error: password is empty");
+  if (!password || password.length > MAX_LENGTH) {
+    log(`❌ Error: password invalid (1-${MAX_LENGTH} chars)`);
     return;
-  }
-  if (password.length > MAX_LENGTH) {
-    log(`❌ Error: password too long (max ${MAX_LENGTH})`);
-    return;
-  }
-  if (!charset) {
-    log("❌ Error: charset is empty");
-    return;
-  }
-  if (password.split("").some((c) => !charset.includes(c))) {
-    log(`⚠️ Warning: some characters in password are not in charset`);
   }
 
   running = true;
@@ -151,11 +140,9 @@ async function startSimulation() {
   $("startBtn").disabled = true;
   $("stopBtn").disabled = false;
 
-  const targetHash = await sha256(password);
+  const targetHash = sha256Sync(password);
 
   log(`[Target] ${password}`);
-  log(`[Hash]   ${targetHash.slice(0, 32)}...`);
-  log(`[Charset] ${charset.length} chars`);
   log(`[Workers] ${NUM_WORKERS}`);
   log("─".repeat(30));
 
@@ -176,12 +163,11 @@ async function startSimulation() {
     log(`[Password] ${found}`);
     log(`[Time]     ${elapsed.toFixed(2)}s`);
     log(`[Rate]     ${rate.toLocaleString()} tries/sec`);
-    setStatus(`✅ Found: ${found} in ${elapsed.toFixed(2)}s`);
+    setStatus(`✅ Found: ${found}`);
   } else {
     log(`❌ NOT FOUND within ${MAX_LENGTH} chars`);
     log(`[Time]     ${elapsed.toFixed(2)}s`);
-    log(`[Rate]     ${rate.toLocaleString()} tries/sec`);
-    setStatus(`❌ Not found in ${elapsed.toFixed(2)}s`);
+    setStatus(`❌ Not found`);
   }
 
   running = false;
@@ -189,12 +175,9 @@ async function startSimulation() {
   $("stopBtn").disabled = true;
 }
 
-// ============================================
-// رویدادها
-// ============================================
 $("startBtn").addEventListener("click", startSimulation);
 $("stopBtn").addEventListener("click", () => {
   stopAll();
-  setStatus("⏹ Stopped by user");
+  setStatus("⏹ Stopped");
   log("⏹ Stopped by user");
 });

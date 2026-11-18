@@ -1,0 +1,9 @@
+{
+  "appId": "com.education.pwsim",
+  "appName": "Password Simulator",
+  "webDir": ".",
+  "bundledWebRuntime": false,
+  "android": {
+    "allowMixedContent": true
+  }
+}
